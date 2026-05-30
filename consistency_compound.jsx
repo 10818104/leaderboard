@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-
+ 
 const ADMIN_PIN   = "1234";
 const STORAGE_KEY = "cc_leaderboard_v1";
 const WORK_DAYS   = 25;
-
+ 
 const METRICS = [
   { key: "friends",      label: "Friends",      icon: "👥", resultWeight: 1,  monthlyOnly: false, def: "Number of new names added to your list." },
   { key: "contacts",     label: "Contacts",     icon: "📞", resultWeight: 2,  monthlyOnly: false, def: "Number of people contacted. Call, text, DM, etc." },
@@ -14,40 +14,40 @@ const METRICS = [
   { key: "licenses",     label: "Licenses",     icon: "📋", resultWeight: 11, monthlyOnly: true,  def: "Number of licenses in the system (submitted agent agreement)." },
   { key: "event_reg",    label: "Event Reg",    icon: "🎪", resultWeight: 13, monthlyOnly: true,  def: "Number of people who have their Big Event ticket." },
 ];
-
+ 
 const HABITS      = ["business_plan", "preplan", "read_learn", "workout"];
 const HABIT_LABELS = { business_plan:"Business Plan", preplan:"Preplan", read_learn:"Read/Learn", workout:"Workout" };
 const HABIT_ICONS  = { business_plan:"📊", preplan:"🗓️", read_learn:"📚", workout:"💪" };
-
+ 
 // DAILY targets (friends, contacts, appts_booked, appts_done)
 const DEFAULT_DAILY = {
   friends:2, contacts:12, appts_booked:2, appts_done:2,
 };
-
+ 
 // MONTHLY targets for results metrics (recruits, points, event_reg, licenses)
 const DEFAULT_MONTHLY = {
   recruits:15, points:50000, event_reg:20, licenses:8,
 };
-
+ 
 // Helper: get effective monthly target for any metric
 const getMonthly = (m, key) => {
   const metric = METRICS.find(x => x.key === key);
   if (metric?.monthlyOnly) return m.monthly?.[key] ?? DEFAULT_MONTHLY[key] ?? 0;
   return Math.round((m.daily?.[key] ?? 0) * WORK_DAYS);
 };
-
+ 
 // Single gold accent for the whole tool
 const GOLD      = "#FFD700";  // primary brand colour
 const GOLD_DEEP = "#B8860B";  // darker gold for gradients
-
+ 
 // Rank colours — only used on the leaderboard podium
 const RANK_GOLD   = "#FFD700"; // 1st
 const RANK_SILVER = "#C0C0C0"; // 2nd
 const RANK_BRONZE = "#CD7F32"; // 3rd
-
+ 
 // All members share the same accent — keeps the leaderboard clean
 function nextColor() { return GOLD; }
-
+ 
 const DEFAULT_MEMBERS = [
   { id:1,  name:"Darryl Johnson", color:GOLD },
   { id:2,  name:"Ashley Rutton",  color:GOLD },
@@ -60,18 +60,18 @@ const DEFAULT_MEMBERS = [
   { id:9,  name:"Member 9",       color:GOLD },
   { id:10, name:"Member 10",      color:GOLD },
 ];
-
+ 
 const EMPTY_ACTUALS = () => ({
   friends:0, contacts:0, appts_booked:0, appts_done:0,
   recruits:0, points:0, event_reg:0, licenses:0,
 });
-
+ 
 const EMPTY_LOG = () => ({
   friends:"", contacts:"", appts_booked:"", appts_done:"",
   recruits:"", points:"", event_reg:"", licenses:"",
   business_plan:false, preplan:false, read_learn:false, workout:false,
 });
-
+ 
 function initMembers() {
   return DEFAULT_MEMBERS.map(m => ({
     ...m,
@@ -85,7 +85,7 @@ function initMembers() {
     submissions: {},   // { "YYYY-MM-DD": { actuals: {}, habits: {} } } — full history
   }));
 }
-
+ 
 function calcScore(m) {
   let s = 0;
   // Metric performance vs target (capped at 150% for over-performance)
@@ -103,12 +103,12 @@ function calcScore(m) {
   s += (m.postStreak || 0) * 4;
   return Math.round(s);
 }
-
+ 
 // Streak grace cutoff — leaders have until this time the next day to post yesterday's numbers.
 // Always 3pm in America/New_York, which auto-handles EST/EDT transitions across the year.
 const STREAK_CUTOFF_HOUR_ET = 15;       // 3pm Eastern (works in both EST and EDT)
 const STREAK_CUTOFF_TZ      = "America/New_York";
-
+ 
 // Returns the UTC milliseconds of 3pm Eastern on a given date (YYYY-MM-DD).
 // Uses the Intl API to correctly resolve EST vs EDT for any date.
 function easternCutoffMs(dateKey) {
@@ -131,7 +131,7 @@ function easternCutoffMs(dateKey) {
   // 3pm ET in UTC = 15 + offsetHours
   return Date.UTC(y, m-1, d, STREAK_CUTOFF_HOUR_ET + offsetHours, 0, 0);
 }
-
+ 
 // Returns the current Eastern Time hour as a number (0-23).
 function currentEasternHour() {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -140,7 +140,7 @@ function currentEasternHour() {
   }).formatToParts(new Date());
   return parseInt(parts.find(p => p.type === "hour").value, 10);
 }
-
+ 
 // Today's calendar date in Eastern Time (so day boundaries match the cutoff zone).
 function todayKey() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -152,7 +152,7 @@ function todayKey() {
   const d = parts.find(p => p.type === "day").value;
   return `${y}-${m}-${d}`;
 }
-
+ 
 // Current month key (e.g. "2026-05") used for archive storage and rollover detection.
 function monthKey(d = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -163,13 +163,13 @@ function monthKey(d = new Date()) {
   const m = parts.find(p => p.type === "month").value;
   return `${y}-${m}`;
 }
-
+ 
 // Pretty-format a month key for display (e.g. "2026-05" → "MAY 2026")
 function formatMonthKey(key) {
   const [y,m] = key.split("-").map(Number);
   return new Date(y, m-1, 1).toLocaleString("default", { month:"long", year:"numeric" }).toUpperCase();
 }
-
+ 
 // Streak reference date — the latest day that streak math expects a submission for.
 // Streak reference date — the latest day that streak math expects a submission for.
 // Before 3pm ET: reference = yesterday (today is still optional, posting yesterday's numbers still counts)
@@ -180,13 +180,13 @@ function streakReferenceKey() {
   }
   return todayKey();
 }
-
+ 
 // Returns true if it's currently within the grace window (before 3pm ET)
 // — i.e. yesterday's submission is still open without breaking the streak
 function isInGraceWindow() {
   return currentEasternHour() < STREAK_CUTOFF_HOUR_ET;
 }
-
+ 
 // The latest UTC ms a submission for a given date can be made and still count toward the streak.
 // That is: 3pm Eastern Time on the day AFTER the date in question. DST-aware.
 function streakDeadlineMs(dateKey) {
@@ -195,7 +195,7 @@ function streakDeadlineMs(dateKey) {
   const nextKey = `${nextDay.getFullYear()}-${String(nextDay.getMonth()+1).padStart(2,"0")}-${String(nextDay.getDate()).padStart(2,"0")}`;
   return easternCutoffMs(nextKey);
 }
-
+ 
 // Did this submission get logged in time to count toward the streak?
 function submittedOnTime(dateKey, submission) {
   if (!submission) return false;
@@ -204,7 +204,7 @@ function submittedOnTime(dateKey, submission) {
   if (!submission.submittedAt) return false;
   return submission.submittedAt <= streakDeadlineMs(dateKey);
 }
-
+ 
 // Hours/mins remaining until the next 3pm ET cutoff. DST-aware.
 function timeUntilCutoff() {
   const now = Date.now();
@@ -225,17 +225,17 @@ function timeUntilCutoff() {
   const mins  = Math.floor((ms % 3600000) / 60000);
   return { hours, mins };
 }
-
+ 
 // Is this date locked for new submissions? A day becomes locked once its 3pm-next-day deadline passes.
 // Note: existing submissions for the day can still be edited; this only blocks NEW entries.
 function isDateLocked(dateKey) {
   return Date.now() > streakDeadlineMs(dateKey);
 }
-
+ 
 function dateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-
+ 
 // Yesterday relative to a given date key
 function prevDayKey(key) {
   const [y,m,d] = key.split("-").map(Number);
@@ -243,13 +243,13 @@ function prevDayKey(key) {
   date.setDate(date.getDate() - 1);
   return dateKey(date);
 }
-
+ 
 // Format a date key for display (e.g. "Friday, May 1")
 function formatDateKey(key) {
   const [y,m,d] = key.split("-").map(Number);
   return new Date(y, m-1, d).toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric" });
 }
-
+ 
 // Generate calendar grid for current month
 function getMonthDays() {
   const now = new Date();
@@ -262,7 +262,7 @@ function getMonthDays() {
   }
   return days;
 }
-
+ 
 // Compute posting streak — consecutive days ending at the streak reference date.
 // A submission only counts toward the streak if it was made BEFORE that day's deadline (3pm EST the next day).
 // Backdated submissions made after the window has closed are still recorded for the monthly total but don't extend the streak.
@@ -283,7 +283,7 @@ function computePostStreak(submissions) {
   }
   return streak;
 }
-
+ 
 // Compute habit streak — consecutive days with ALL 4 habits, submitted on time.
 function computeHabitStreak(submissions) {
   const ref = streakReferenceKey();
@@ -301,62 +301,158 @@ function computeHabitStreak(submissions) {
   }
   return streak;
 }
-
+ 
 function getPct(actual, target) { return (!target) ? 0 : Math.min(Math.round((actual/target)*100), 999); }
 // Simplified colour ramp: gold when hitting target, muted grey otherwise
 function getColor(pct) { return pct>=100 ? "#FFD700" : pct>=75 ? "#D4A017" : pct>=50 ? "#94a3b8" : "#475569"; }
-
+ 
 const TABS = ["LEADERBOARD", "CHECK-IN", "ARCHIVE", "SETUP"];
-
-// ─── STORAGE LAYER ─────────────────────────────────────────────────────────
-// All persistence flows through these two functions.
-//
-// In Claude artifacts: uses window.storage (the only allowed API in the sandbox).
-// On a hosted website: uses window.localStorage (persists per-browser/device).
-// To host with cloud sync (Supabase, Firebase, your own API), replace the body
-// of loadFromStorage and saveToStorage. The rest of the app stays identical.
+ 
+// ─── SUPABASE STORAGE LAYER ────────────────────────────────────────────────
+const SUPABASE_URL  = "https://jtjucjooaqqahnctqmhy.supabase.co";
+const SUPABASE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0anVjam9vYXFxYWhuY3RxbWh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4MTEzNzQsImV4cCI6MjA5NTM4NzM3NH0.SOB1yViHjGPx_-l4SAfPsqA2XmpoGE-j7YaalJZypZ8";
+ 
+const sbHeaders = {
+  "Content-Type":  "application/json",
+  "apikey":        SUPABASE_KEY,
+  "Authorization": `Bearer ${SUPABASE_KEY}`,
+  "Prefer":        "return=representation",
+};
+ 
+async function sbGet(table, key) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(key)}&select=*`, { headers: sbHeaders });
+    const rows = await r.json();
+    return rows?.[0] ?? null;
+  } catch(e) { console.warn("sbGet failed", e); return null; }
+}
+ 
+async function sbUpsert(table, id, data) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: "POST",
+      headers: { ...sbHeaders, "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ id, data, updated_at: new Date().toISOString() }),
+    });
+  } catch(e) { console.warn("sbUpsert failed", e); }
+}
+ 
+async function sbGetArchive(monthKey) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/archives?month_key=eq.${encodeURIComponent(monthKey)}&select=*`, { headers: sbHeaders });
+    const rows = await r.json();
+    return rows?.[0] ?? null;
+  } catch(e) { console.warn("sbGetArchive failed", e); return null; }
+}
+ 
+async function sbUpsertArchive(monthKey, data) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/archives`, {
+      method: "POST",
+      headers: { ...sbHeaders, "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ month_key: monthKey, data, archived_at: new Date().toISOString() }),
+    });
+  } catch(e) { console.warn("sbUpsertArchive failed", e); }
+}
+ 
+async function sbGetAllMembers() {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/members?select=*`, { headers: sbHeaders });
+    return await r.json();
+  } catch(e) { console.warn("sbGetAllMembers failed", e); return []; }
+}
+ 
+async function sbGetAllArchives() {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/archives?select=*`, { headers: sbHeaders });
+    return await r.json();
+  } catch(e) { console.warn("sbGetAllArchives failed", e); return []; }
+}
+ 
+async function sbDeleteMember(id) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/members?id=eq.${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: sbHeaders,
+    });
+  } catch(e) { console.warn("sbDeleteMember failed", e); }
+}
+ 
+async function sbGetAppState(key) {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/app_state?key=eq.${encodeURIComponent(key)}&select=*`, { headers: sbHeaders });
+    const rows = await r.json();
+    return rows?.[0]?.value ?? null;
+  } catch(e) { console.warn("sbGetAppState failed", e); return null; }
+}
+ 
+async function sbSetAppState(key, value) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/app_state`, {
+      method: "POST",
+      headers: { ...sbHeaders, "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ key, value: String(value) }),
+    });
+  } catch(e) { console.warn("sbSetAppState failed", e); }
+}
+ 
 async function loadFromStorage() {
   try {
-    // Prefer window.storage when available (Claude artifact sandbox)
-    if (typeof window !== "undefined" && window.storage && typeof window.storage.get === "function") {
-      const r = await window.storage.get(STORAGE_KEY);
-      if (r?.value) return JSON.parse(r.value);
-      return null;
-    }
-    // Fallback to localStorage (any normal hosted website)
-    if (typeof window !== "undefined" && window.localStorage) {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    }
-  } catch (e) { console.warn("loadFromStorage failed", e); }
-  return null;
+    const [memberRows, archiveRows, activeMonthVal] = await Promise.all([
+      sbGetAllMembers(),
+      sbGetAllArchives(),
+      sbGetAppState("activeMonth"),
+    ]);
+ 
+    if (!memberRows || memberRows.length === 0) return null;
+ 
+    const members = memberRows.map(row => row.data);
+ 
+    const archives = {};
+    (archiveRows || []).forEach(row => {
+      archives[row.month_key] = row.data;
+    });
+ 
+    return {
+      members,
+      archives,
+      activeMonth: activeMonthVal || monthKey(),
+    };
+  } catch(e) { console.warn("loadFromStorage failed", e); return null; }
 }
-
+ 
 async function saveToStorage(data) {
-  const json = JSON.stringify(data);
   try {
-    if (typeof window !== "undefined" && window.storage && typeof window.storage.set === "function") {
-      await window.storage.set(STORAGE_KEY, json);
-      return;
+    const { members, archives, activeMonth: am } = data;
+ 
+    // Save each member individually
+    await Promise.all(members.map(m => sbUpsert("members", String(m.id), m)));
+ 
+    // Save archives
+    if (archives) {
+      await Promise.all(
+        Object.entries(archives).map(([mk, v]) => sbUpsertArchive(mk, v))
+      );
     }
-    if (typeof window !== "undefined" && window.localStorage) {
-      window.localStorage.setItem(STORAGE_KEY, json);
-    }
-  } catch (e) { console.warn("saveToStorage failed", e); }
+ 
+    // Save active month
+    if (am) await sbSetAppState("activeMonth", am);
+ 
+  } catch(e) { console.warn("saveToStorage failed", e); }
 }
-
+ 
 export default function App() {
   const [members, setMembers]             = useState(initMembers);
   const [loaded, setLoaded]               = useState(false);
   const [tab, setTab]                     = useState("LEADERBOARD");
   const [expandedId, setExpandedId]       = useState(null);
   const [guideOpen, setGuideOpen]         = useState(false);
-
+ 
   // Archives — past months stored as { "YYYY-MM": { members: [...frozen snapshot...], archivedAt } }
   const [archives, setArchives]           = useState({});
   const [activeMonth, setActiveMonth]     = useState(monthKey());
   const [viewingArchive, setViewingArchive] = useState(null); // archive month key when viewing history
-
+ 
   // Check-in
   const [ciScreen, setCiScreen]           = useState("SELECT");
   const [ciIdx, setCiIdx]                 = useState(null);
@@ -364,37 +460,37 @@ export default function App() {
   const [confirmed, setConfirmed]         = useState(null);
   const [saving, setSaving]               = useState(false);
   const [submissionDate, setSubmissionDate] = useState(todayKey()); // which day the rep is logging for
-
+ 
   // Admin
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pinInput, setPinInput]           = useState("");
   const [pinError, setPinError]           = useState(false);
   const [editTargets, setEditTargets]     = useState(null);
   const [flash, setFlash]                 = useState(null);
-
+ 
   // Modal system (replaces window.alert/confirm/prompt which are blocked in artifact sandbox)
   // modal: { type: "alert"|"confirm"|"prompt", title, message, onOk?, onCancel?, inputValue?, placeholder?, danger?: boolean }
   const [modal, setModal]                 = useState(null);
   const [modalInput, setModalInput]       = useState("");
-
+ 
   // Helper: show alert modal
   function showAlert(title, message) {
     setModal({ type:"alert", title, message });
   }
-
+ 
   // Helper: show confirm modal — onOk is called if user confirms
   function showConfirm(title, message, onOk, danger=false) {
     setModal({ type:"confirm", title, message, onOk, danger });
   }
-
+ 
   // Helper: show prompt modal — onOk receives the entered text
   function showPrompt(title, message, placeholder, onOk) {
     setModalInput("");
     setModal({ type:"prompt", title, message, placeholder, onOk });
   }
-
+ 
   function closeModal() { setModal(null); setModalInput(""); }
-
+ 
   // ── Load ──
   useEffect(() => {
     async function load() {
@@ -438,14 +534,9 @@ export default function App() {
                 if (!sub.submittedAt) sub.submittedAt = streakDeadlineMs(dk);
               });
               if (result.postStreak === undefined) result.postStreak = result.daysPosted || 0;
-              // Only recompute streaks from submissions if there are any.
-              // If submissions is empty (e.g. right after a month reset), keep the
-              // stored streak values so they carry over into the new month.
-              if (Object.keys(result.submissions).length > 0) {
-                result.postStreak = computePostStreak(result.submissions);
-                result.streak     = computeHabitStreak(result.submissions);
-              }
-              // else: leave result.streak / result.postStreak as loaded from storage
+              // Recompute streaks against current time — handles overnight cutoff transitions
+              result.postStreak = computePostStreak(result.submissions);
+              result.streak     = computeHabitStreak(result.submissions);
               return result;
             });
             setMembers(migrated);
@@ -458,23 +549,31 @@ export default function App() {
     }
     load();
   }, []);
-
-  // ── Save ── (debounced so rapid changes don't trigger overlapping writes)
+ 
+  // ── Save archives and activeMonth only (members saved individually on submit) ──
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(() => {
-      saveToStorage({ members, archives, activeMonth }).catch(() => {});
+      sbSetAppState("activeMonth", activeMonth).catch(() => {});
     }, 150);
     return () => clearTimeout(t);
-  }, [members, archives, activeMonth, loaded]);
-
+  }, [activeMonth, loaded]);
+ 
+  useEffect(() => {
+    if (!loaded) return;
+    const t = setTimeout(() => {
+      Object.entries(archives).forEach(([mk, v]) => sbUpsertArchive(mk, v).catch(() => {}));
+    }, 150);
+    return () => clearTimeout(t);
+  }, [archives, loaded]);
+ 
   const sorted = [...members].map(m => ({ ...m, score: calcScore(m) })).sort((a,b) => b.score - a.score);
   const month  = formatMonthKey(activeMonth);
-
+ 
   // ── Check-in submit ──
   async function handleSubmit() {
     if (ciIdx === null) return;
-
+ 
     // Block submission for locked past days (deadline passed, nothing submitted yet)
     const member = members[ciIdx];
     const isExistingSubmission = !!member?.submissions?.[submissionDate];
@@ -485,7 +584,7 @@ export default function App() {
       );
       return;
     }
-
+ 
     // Validate: at least one number entered OR at least one habit ticked
     const hasNumbers = METRICS.some(({ key }) => {
       const v = logData[key];
@@ -496,7 +595,7 @@ export default function App() {
       showAlert("Nothing to submit", "Please enter at least one number or tick at least one habit before submitting.");
       return;
     }
-
+ 
     // Sanitize numeric inputs — block negative or NaN values
     for (const { key, label } of METRICS) {
       const v = logData[key];
@@ -507,7 +606,7 @@ export default function App() {
         return;
       }
     }
-
+ 
     // Warn only when submitting for TODAY and breaking a habit streak of 3+
     const currentStreak = members[ciIdx].streak;
     const allHabitsTicked = HABITS.every(h => logData[h]);
@@ -521,10 +620,10 @@ export default function App() {
       );
       return;
     }
-
+ 
     doSubmit();
   }
-
+ 
   async function doSubmit() {
     setSaving(true);
     try {
@@ -534,7 +633,7 @@ export default function App() {
         const s = await loadFromStorage();
         if (s?.members) cur = s.members;
       } catch(e) {}
-
+ 
       const targetDate = submissionDate;
       const memberPrev = cur[ciIdx]?.submissions?.[targetDate] || null;
       // Preserve original submittedAt on edits so editing doesn't retroactively break the streak.
@@ -547,13 +646,13 @@ export default function App() {
         habits:      Object.fromEntries(HABITS.map(h => [h, !!logData[h]])),
         submittedAt: preservedSubmittedAt,
       };
-
+ 
       const updated = cur.map((m,i) => {
         if (i !== ciIdx) return m;
-
+ 
         const wasEdit = !!m.submissions?.[targetDate];
         const prev = m.submissions?.[targetDate] || null;
-
+ 
         // Adjust running totals: subtract previous values for this date, add new ones
         const na = { ...m.actuals };
         METRICS.forEach(({ key }) => {
@@ -561,22 +660,22 @@ export default function App() {
           const newVal  = newSubmission.actuals[key] || 0;
           na[key] = Math.max(0, (na[key] || 0) - prevVal + newVal);
         });
-
+ 
         const nh = { ...m.habits };
         HABITS.forEach(h => {
           const prevTicked = prev?.habits?.[h] ? 1 : 0;
           const newTicked  = newSubmission.habits[h] ? 1 : 0;
           nh[h] = Math.max(0, (nh[h] || 0) - prevTicked + newTicked);
         });
-
+ 
         // Update submissions map
         const newSubs = { ...m.submissions, [targetDate]: newSubmission };
-
+ 
         // Recompute streaks from full history (handles backdated submissions correctly)
         const newPostStreak  = computePostStreak(newSubs);
         const newHabitStreak = computeHabitStreak(newSubs);
         const newDaysPosted  = Object.keys(newSubs).length;
-
+ 
         return {
           ...m,
           actuals:    na,
@@ -587,10 +686,12 @@ export default function App() {
           submissions: newSubs,
         };
       });
-
-      await saveToStorage({ members:updated, archives, activeMonth });
+ 
+      // Save only the affected member to avoid overwriting concurrent submissions
+      const affectedMember = updated[ciIdx];
+      await sbUpsert("members", String(affectedMember.id), affectedMember);
       setMembers(updated);
-
+ 
       const fresh = updated[ciIdx];
       const wasEdit = !!cur[ciIdx].submissions?.[targetDate];
       setConfirmed({
@@ -613,16 +714,19 @@ export default function App() {
     }
     setSaving(false);
   }
-
+ 
   function handleCiReset() { setCiScreen("SELECT"); setCiIdx(null); setLogData(EMPTY_LOG()); setConfirmed(null); }
-
+ 
   // ── Admin ──
   function openEdit(id) {
     const m = members.find(x => x.id===id);
     setEditTargets({ id, name:m.name, daily:{ ...m.daily }, monthly:{ ...(m.monthly||DEFAULT_MONTHLY) } });
   }
   function saveTargets() {
-    setMembers(prev => prev.map(m => m.id===editTargets.id ? {...m, name:editTargets.name, daily:editTargets.daily, monthly:editTargets.monthly} : m));
+    const updated = members.map(m => m.id===editTargets.id ? {...m, name:editTargets.name, daily:editTargets.daily, monthly:editTargets.monthly} : m);
+    const affected = updated.find(m => m.id===editTargets.id);
+    if (affected) sbUpsert("members", String(affected.id), affected).catch(() => {});
+    setMembers(updated);
     setEditTargets(null);
   }
   function handlePinDigit(d) {
@@ -660,18 +764,8 @@ export default function App() {
           ...prev,
           [activeMonth]: { members: snapshot, archivedAt: Date.now() },
         }));
-        // Reset live state — streak and postStreak are intentionally preserved across month boundaries
-        const resetMembers = members.map(m => ({
-          ...m,
-          actuals:    EMPTY_ACTUALS(),
-          habits:     { business_plan:0, preplan:0, read_learn:0, workout:0 },
-          daysPosted: 0,
-          submissions: {},
-          // streak and postStreak carry over — they don't reset with the month
-        }));
-        setMembers(resetMembers);
-        // Persist reset members to Supabase so reload doesn't restore old data
-        resetMembers.forEach(m => sbUpsert("members", String(m.id), m).catch(() => {}));
+        // Reset live state
+        setMembers(prev => prev.map(m => ({ ...m, actuals:EMPTY_ACTUALS(), habits:{business_plan:0,preplan:0,read_learn:0,workout:0}, streak:0, postStreak:0, daysPosted:0, submissions:{} })));
         // Roll the active month forward to the current real-world month
         setActiveMonth(monthKey());
         closeModal();
@@ -680,7 +774,7 @@ export default function App() {
       true
     );
   }
-
+ 
   // Reset a single member's actuals/habits/streak — keeps name + targets
   function resetMember(id) {
     const m = members.find(x => x.id===id);
@@ -699,7 +793,7 @@ export default function App() {
       true
     );
   }
-
+ 
   // Add a new member to the team with sensible defaults
   function addMember() {
     showPrompt(
@@ -731,7 +825,7 @@ export default function App() {
       }
     );
   }
-
+ 
   // Remove a member entirely
   function removeMember(id) {
     const m = members.find(x => x.id===id);
@@ -741,29 +835,30 @@ export default function App() {
       "Their numbers, targets, habits, and history will all be deleted. They'll be gone from the leaderboard and check-in screens.\n\nThis cannot be undone.",
       () => {
         setMembers(prev => prev.filter(x => x.id!==id));
+        sbDeleteMember(String(id));
         closeModal();
         showFlash(`${m.name} removed`);
       },
       true
     );
   }
-
+ 
   function showFlash(msg) { setFlash(msg); setTimeout(() => setFlash(null), 2500); }
-
+ 
   if (!loaded) return (
     <div style={{ minHeight:"100vh", background:"#0a0a0f", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Barlow Condensed',sans-serif", color:"#FFD700", fontSize:18, letterSpacing:4 }}>LOADING...</div>
   );
-
+ 
   return (
     <div style={{ minHeight:"100vh", background:"#0a0a0f", fontFamily:"'Barlow Condensed','Arial Narrow',sans-serif", color:"#e2e8f0", position:"relative", overflow:"hidden" }}>
-
+ 
       {/* BG */}
       <div style={{ position:"fixed", inset:0, zIndex:0, backgroundImage:`linear-gradient(rgba(255,215,0,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,215,0,0.04) 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none" }} />
       <div style={{ position:"fixed", top:"-20%", right:"-10%", width:500, height:500, borderRadius:"50%", background:"radial-gradient(circle,rgba(255,215,0,0.10) 0%,transparent 70%)", pointerEvents:"none", zIndex:0 }} />
       <div style={{ position:"fixed", bottom:"-20%", left:"-10%", width:400, height:400, borderRadius:"50%", background:"radial-gradient(circle,rgba(184,134,11,0.08) 0%,transparent 70%)", pointerEvents:"none", zIndex:0 }} />
-
+ 
       <div style={{ position:"relative", zIndex:1, maxWidth:900, margin:"0 auto", padding:"0 16px 60px" }}>
-
+ 
         {/* Header */}
         <div style={{ textAlign:"center", padding:"32px 0 20px" }}>
           <div style={{ fontSize:11, letterSpacing:6, color:"#FFD700", textTransform:"uppercase", marginBottom:6, fontWeight:700 }}>CONSISTENCY COMPOUND</div>
@@ -772,21 +867,21 @@ export default function App() {
           </div>
           <div style={{ fontSize:13, color:"#64748b", marginTop:6, letterSpacing:2 }}>{month} · {members.length} {members.length===1?"LEADER":"LEADERS"}</div>
         </div>
-
+ 
         {/* Tabs */}
         <div style={{ display:"flex", gap:4, background:"#0f0f0f", borderRadius:10, padding:4, marginBottom:24, border:"1px solid #1c1c1c" }}>
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)} style={{ flex:1, padding:"10px 0", borderRadius:8, border:"none", cursor:"pointer", background: tab===t ? (t==="CHECK-IN" ? "linear-gradient(135deg,#FFD700,#B8860B)" : "#FFD700") : "transparent", color: tab===t ? "#fff" : "#64748b", fontFamily:"inherit", fontSize:12, fontWeight:700, letterSpacing:2, transition:"all 0.2s" }}>{t}</button>
           ))}
         </div>
-
+ 
         {/* Flash */}
         {flash && (
           <div style={{ position:"fixed", top:20, left:"50%", transform:"translateX(-50%)", background:"linear-gradient(135deg,#FFD700,#B8860B)", color:"#fff", padding:"12px 28px", borderRadius:30, fontWeight:700, letterSpacing:2, fontSize:13, zIndex:999, boxShadow:"0 8px 32px rgba(255,215,0,0.4)", animation:"fadeInOut 2.5s ease" }}>
             ✅ {flash.toUpperCase()}
           </div>
         )}
-
+ 
         {/* ══ LEADERBOARD ══ */}
         {tab === "LEADERBOARD" && members.length === 0 && (
           <div style={{ background:"#0f0f0f", border:"1px dashed #2a2a2a", borderRadius:14, padding:"60px 20px", textAlign:"center" }}>
@@ -795,7 +890,7 @@ export default function App() {
             <div style={{ fontSize:12, color:"#64748b", letterSpacing:1 }}>Add team members in the Setup tab to start the competition</div>
           </div>
         )}
-
+ 
         {tab === "LEADERBOARD" && members.length > 0 && (
           <div>
             {/* Month rollover nudge — shows when real-world month is past activeMonth */}
@@ -804,7 +899,7 @@ export default function App() {
                 📅 <strong style={{ color:GOLD }}>New month started.</strong> {formatMonthKey(activeMonth)} is still showing. Admin: open Setup → Reset Month to archive and start fresh.
               </div>
             )}
-
+ 
             {/* Podium — rank-coloured (gold/silver/bronze) */}
             <div style={{ display:"flex", gap:12, marginBottom:20, alignItems:"flex-end" }}>
               {[1,0,2].map((ri,i) => {
@@ -825,7 +920,7 @@ export default function App() {
                 );
               })}
             </div>
-
+ 
             {/* List — predominantly black, gold accents only on top 3 + score */}
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {sorted.map((m, rank) => {
@@ -883,7 +978,7 @@ export default function App() {
                 );
               })}
             </div>
-
+ 
             {/* ── How It Works Guide (collapsible) ── */}
             <div style={{ marginTop:28, marginBottom:8 }}>
               <button onClick={() => setGuideOpen(!guideOpen)} style={{
@@ -898,10 +993,10 @@ export default function App() {
                 <span>📖 HOW THE LEADERBOARD WORKS</span>
                 <span style={{ fontSize:14 }}>{guideOpen ? "▲" : "▼"}</span>
               </button>
-
+ 
               {guideOpen && (
                 <div style={{ marginTop:10, background:"#0f0f0f", border:`1px solid ${GOLD}33`, borderRadius:12, padding:"22px 22px 18px" }}>
-
+ 
                   {/* Mission */}
                   <div style={{ marginBottom:22 }}>
                     <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, letterSpacing:3, color:GOLD, fontWeight:800, marginBottom:8, textTransform:"uppercase" }}>The Mission</div>
@@ -909,7 +1004,7 @@ export default function App() {
                       Show up daily. Hit your numbers. Stack your habits. The leader who does all three consistently wins. Simple.
                     </div>
                   </div>
-
+ 
                   {/* Daily Check-In */}
                   <div style={{ marginBottom:22 }}>
                     <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, letterSpacing:3, color:GOLD, fontWeight:800, marginBottom:8, textTransform:"uppercase" }}>Daily Check-In</div>
@@ -923,7 +1018,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-
+ 
                   {/* Score formula */}
                   <div style={{ marginBottom:22 }}>
                     <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, letterSpacing:3, color:GOLD, fontWeight:800, marginBottom:10, textTransform:"uppercase" }}>How You Score</div>
@@ -934,7 +1029,7 @@ export default function App() {
                       Each metric scored as % of your personal target, capped at 150% so overperformance is rewarded but doesn't snowball.
                     </div>
                   </div>
-
+ 
                   {/* Metric weights */}
                   <div style={{ marginBottom:22 }}>
                     <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, letterSpacing:3, color:GOLD, fontWeight:800, marginBottom:10, textTransform:"uppercase" }}>Metric Weights</div>
@@ -964,7 +1059,7 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-
+ 
                   {/* Consistency bonuses */}
                   <div style={{ marginBottom:22 }}>
                     <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, letterSpacing:3, color:GOLD, fontWeight:800, marginBottom:10, textTransform:"uppercase" }}>Consistency Bonuses</div>
@@ -982,7 +1077,7 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-
+ 
                   {/* To Be #1 */}
                   <div style={{ marginBottom:18 }}>
                     <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:13, letterSpacing:3, color:GOLD, fontWeight:800, marginBottom:10, textTransform:"uppercase" }}>To Be #1</div>
@@ -1002,7 +1097,7 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-
+ 
                   {/* Bottom line */}
                   <div style={{ background:`linear-gradient(135deg, ${GOLD}1A, ${GOLD_DEEP}0D)`, border:`1px solid ${GOLD}55`, borderRadius:10, padding:"14px 18px", textAlign:"center" }}>
                     <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:16, fontWeight:800, color:GOLD, letterSpacing:1.5, marginBottom:4, textTransform:"uppercase" }}>You can't out-hustle inconsistency.</div>
@@ -1013,14 +1108,14 @@ export default function App() {
                 </div>
               )}
             </div>
-
+ 
           </div>
         )}
-
+ 
         {/* ══ CHECK-IN ══ */}
         {tab === "CHECK-IN" && (
           <div style={{ maxWidth:480, margin:"0 auto" }}>
-
+ 
             {/* SELECT */}
             {ciScreen === "SELECT" && members.length === 0 && (
               <div style={{ background:"#0f0f0f", border:"1px dashed #2a2a2a", borderRadius:14, padding:"40px 20px", textAlign:"center" }}>
@@ -1029,7 +1124,7 @@ export default function App() {
                 <div style={{ fontSize:11, color:"#64748b", letterSpacing:1 }}>An admin needs to add members in the Setup tab.</div>
               </div>
             )}
-
+ 
             {ciScreen === "SELECT" && members.length > 0 && (
               <div>
                 {/* Cutoff status banner */}
@@ -1047,22 +1142,17 @@ export default function App() {
                 <div style={{ fontSize:11, color:"#64748b", letterSpacing:3, marginBottom:16, textAlign:"center" }}>WHO ARE YOU?</div>
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                   {members.map((m,i) => {
-                    // "Done Today" badge and today's submission only available AFTER grace window closes (3pm EST)
-                    // Before 3pm EST, today hasn't been completed yet — only yesterday's window is open
-                    const todayAvailable = !isInGraceWindow();
-                    const submittedToday = todayAvailable && !!m.submissions?.[todayKey()];
+                    const submittedToday = !!m.submissions?.[todayKey()];
                     return (
                       <button key={m.id} onClick={() => {
                         setCiIdx(i);
-                        // Default to today if available, otherwise yesterday (still in grace window)
-                        const initialDate = todayAvailable ? todayKey() : prevDayKey(todayKey());
-                        setSubmissionDate(initialDate);
-                        // Pre-fill if that date already submitted
-                        const initialSub = m.submissions?.[initialDate];
-                        if (initialSub) {
+                        setSubmissionDate(todayKey());
+                        // Pre-fill if today already submitted
+                        if (submittedToday) {
+                          const sub = m.submissions[todayKey()];
                           const ld = EMPTY_LOG();
-                          METRICS.forEach(({key}) => { const v = initialSub.actuals[key]; if (v) ld[key] = String(v); });
-                          HABITS.forEach(h => { ld[h] = !!initialSub.habits[h]; });
+                          METRICS.forEach(({key}) => { const v = sub.actuals[key]; if (v) ld[key] = String(v); });
+                          HABITS.forEach(h => { ld[h] = !!sub.habits[h]; });
                           setLogData(ld);
                         } else {
                           setLogData(EMPTY_LOG());
@@ -1089,7 +1179,7 @@ export default function App() {
                 </div>
               </div>
             )}
-
+ 
             {/* FORM */}
             {ciScreen === "FORM" && ciIdx !== null && ciIdx < members.length && members[ciIdx] && (() => {
               const m = members[ciIdx];
@@ -1112,7 +1202,7 @@ export default function App() {
                     </div>
                     <button onClick={() => { setCiScreen("SELECT"); setLogData(EMPTY_LOG()); setSubmissionDate(todayKey()); }} style={{ background:"transparent", border:"none", color:"#64748b", fontSize:12, letterSpacing:1, cursor:"pointer", fontFamily:"inherit" }}>CHANGE</button>
                   </div>
-
+ 
                   {/* Date picker — calendar grid for the month */}
                   <div style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:12, padding:14, marginBottom:18 }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
@@ -1128,9 +1218,7 @@ export default function App() {
                         const isFuture   = dk > todayKey();
                         // Lock past days where deadline has passed AND nothing was submitted
                         const isLocked   = !isFuture && !submitted && isDateLocked(dk);
-                        // Gate today — not available until grace window closes (3pm EST)
-                        const isTodayGated = dk === todayKey() && isInGraceWindow() && !submitted;
-                        const isDisabled = isFuture || isLocked || isTodayGated;
+                        const isDisabled = isFuture || isLocked;
                         const dayNum = parseInt(dk.split("-")[2], 10);
                         return (
                           <button
@@ -1153,18 +1241,17 @@ export default function App() {
                               aspectRatio:"1", borderRadius:6, fontFamily:"inherit",
                               fontSize:11, fontWeight:700,
                               cursor: isDisabled ? "not-allowed" : "pointer",
-                              border: isSelected ? `2px solid ${GOLD}` : `1px solid ${submitted ? GOLD+"44" : isLocked ? "#3a1a1a" : isTodayGated ? "#1c3a1c" : "#1c1c1c"}`,
-                              background: isSelected ? `${GOLD}33` : submitted ? `${GOLD}11` : isLocked ? "#1a0a0a" : isTodayGated ? "#0a1a0a" : "#0a0a0a",
-                              color: isFuture ? "#334155" : isLocked ? "#5a3a3a" : isTodayGated ? "#3a5a3a" : submitted ? GOLD : isSelected ? GOLD : "#94a3b8",
-                              opacity: isFuture ? 0.4 : isLocked ? 0.7 : isTodayGated ? 0.6 : 1,
+                              border: isSelected ? `2px solid ${GOLD}` : `1px solid ${submitted ? GOLD+"44" : isLocked ? "#3a1a1a" : "#1c1c1c"}`,
+                              background: isSelected ? `${GOLD}33` : submitted ? `${GOLD}11` : isLocked ? "#1a0a0a" : "#0a0a0a",
+                              color: isFuture ? "#334155" : isLocked ? "#5a3a3a" : submitted ? GOLD : isSelected ? GOLD : "#94a3b8",
+                              opacity: isFuture ? 0.4 : isLocked ? 0.7 : 1,
                               position:"relative",
                               transition:"all 0.15s",
                             }}
-                            title={isLocked ? `${formatDateKey(dk)}. Locked: deadline passed` : isTodayGated ? `Today opens after 3pm EST` : isFuture ? formatDateKey(dk) : formatDateKey(dk)}
+                            title={isLocked ? `${formatDateKey(dk)}. Locked: deadline passed` : isFuture ? formatDateKey(dk) : formatDateKey(dk)}
                           >
                             {dayNum}
                             {isLocked && <span style={{ position:"absolute", top:1, right:2, fontSize:7, lineHeight:1 }}>🔒</span>}
-                            {isTodayGated && <span style={{ position:"absolute", top:1, right:2, fontSize:7, lineHeight:1 }}>⏳</span>}
                           </button>
                         );
                       })}
@@ -1174,16 +1261,15 @@ export default function App() {
                       <span><span style={{ display:"inline-block", width:8, height:8, borderRadius:2, background:"transparent", border:`2px solid ${GOLD}`, marginRight:5, verticalAlign:"middle" }} />Selected</span>
                       <span><span style={{ display:"inline-block", width:8, height:8, borderRadius:2, background:"#1c1c1c", marginRight:5, verticalAlign:"middle" }} />Available</span>
                       <span>🔒 Locked</span>
-                      <span>⏳ Opens after 3pm EST</span>
                     </div>
                   </div>
-
+ 
                   {isEditing && (
                     <div style={{ background:`${GOLD}0D`, border:`1px solid ${GOLD}33`, borderRadius:10, padding:"10px 14px", marginBottom:18, fontSize:11, color:"#94a3b8", letterSpacing:1, lineHeight:1.5 }}>
                       ✏️ <strong style={{ color:GOLD }}>Editing {isToday ? "today" : formatDateKey(submissionDate)}.</strong> Changes will replace the previous submission for this day.
                     </div>
                   )}
-
+ 
                   <div style={{ fontSize:11, color:"#64748b", letterSpacing:3, marginBottom:14 }}>{isToday ? "TODAY'S NUMBERS" : "NUMBERS FOR THIS DAY"}</div>
                   <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:28 }}>
                     {METRICS.map(({ key, label, icon, monthlyOnly, def }) => (
@@ -1218,7 +1304,7 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-
+ 
                   <div style={{ fontSize:11, color:"#64748b", letterSpacing:3, marginBottom:14 }}>DAILY HABITS</div>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:32 }}>
                     {HABITS.map(h => (
@@ -1229,14 +1315,14 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-
+ 
                   <button onClick={handleSubmit} disabled={saving} style={{ width:"100%", padding:"18px", borderRadius:14, border:"none", background:saving?"#2a2a2a":`linear-gradient(135deg,${m.color},${m.color}88)`, color:saving?"#64748b":"#0a0a0f", fontFamily:"inherit", fontSize:15, fontWeight:900, letterSpacing:3, cursor:saving?"not-allowed":"pointer", textTransform:"uppercase", boxShadow:saving?"none":`0 4px 32px ${m.color}44`, transition:"all 0.3s" }}>
                     {saving ? "SAVING..." : isEditing ? (isToday ? "✓ UPDATE TODAY'S SUBMISSION" : "✓ UPDATE THIS DAY'S SUBMISSION") : (isToday ? "✓ SUBMIT TODAY'S NUMBERS" : "✓ SUBMIT FOR THIS DAY")}
                   </button>
                 </div>
               );
             })()}
-
+ 
             {/* CONFIRM */}
             {ciScreen === "CONFIRM" && confirmed && (
               <div style={{ textAlign:"center" }}>
@@ -1245,7 +1331,7 @@ export default function App() {
                   <div style={{ fontSize:26, fontWeight:900, letterSpacing:2, color:"#f1f5f9", marginBottom:4 }}>{confirmed.wasEdit ? "UPDATED! ✏️" : "NUMBERS IN! 🔥"}</div>
                   <div style={{ fontSize:12, color:"#64748b", letterSpacing:1 }}>{confirmed.date}</div>
                 </div>
-
+ 
                 {/* Screenshot card */}
                 <div style={{ background:"#0f0f0f", border:`2px solid ${confirmed.color}55`, borderRadius:20, padding:24, marginBottom:20, textAlign:"left" }}>
                   {/* Rep header */}
@@ -1256,7 +1342,7 @@ export default function App() {
                       <div style={{ fontSize:10, color:"#64748b", letterSpacing:1 }}>CONSISTENCY COMPOUND · {confirmed.date.toUpperCase()}</div>
                     </div>
                   </div>
-
+ 
                   {/* Numbers — every metric shown, even if 0 */}
                   <div style={{ marginBottom:16 }}>
                     {METRICS.map(({ key, label, icon, monthlyOnly }) => {
@@ -1280,7 +1366,7 @@ export default function App() {
                       );
                     })}
                   </div>
-
+ 
                   {/* Habits */}
                   <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:confirmed.streak>1?16:0 }}>
                     {HABITS.map(h => (
@@ -1289,7 +1375,7 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-
+ 
                   {/* Streaks */}
                   {(confirmed.postStreak > 0 || confirmed.streak > 0) && (
                     <div style={{ paddingTop:14, borderTop:"1px solid #1c1c1c", display:"flex", gap:14, justifyContent:"center", flexWrap:"wrap" }}>
@@ -1302,11 +1388,11 @@ export default function App() {
                     </div>
                   )}
                 </div>
-
+ 
                 <div style={{ background:"#0a0a0a", border:"1px dashed #2a2a2a", borderRadius:12, padding:"14px 20px", marginBottom:20, fontSize:12, color:"#64748b", letterSpacing:1, lineHeight:1.8 }}>
                   📸 <strong style={{ color:"#94a3b8" }}>Screenshot the card above</strong> and post it to the Telegram group as your daily check-in
                 </div>
-
+ 
                 <div style={{ display:"flex", gap:10 }}>
                   <button onClick={() => {
                     // Re-enter edit mode for the same rep
@@ -1330,7 +1416,7 @@ export default function App() {
             )}
           </div>
         )}
-
+ 
         {/* ══ ARCHIVE ══ */}
         {tab === "ARCHIVE" && (() => {
           const archiveKeys = Object.keys(archives).sort().reverse();
@@ -1341,12 +1427,12 @@ export default function App() {
             return (
               <div>
                 <button onClick={() => setViewingArchive(null)} style={{ background:"transparent", border:"none", color:"#94a3b8", fontSize:11, letterSpacing:2, cursor:"pointer", fontFamily:"inherit", marginBottom:16, padding:"4px 0" }}>← BACK TO ARCHIVES</button>
-
+ 
                 <div style={{ marginBottom:18 }}>
                   <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:36, fontWeight:900, color:GOLD, letterSpacing:2, lineHeight:1 }}>{formatMonthKey(viewingArchive)}</div>
                   <div style={{ fontSize:11, color:"#64748b", marginTop:4, letterSpacing:1 }}>Final standings · Archived {new Date(arch.archivedAt).toLocaleDateString("default", { month:"short", day:"numeric", year:"numeric" })}</div>
                 </div>
-
+ 
                 {/* Frozen podium */}
                 <div style={{ display:"flex", gap:12, marginBottom:20, alignItems:"flex-end" }}>
                   {[1,0,2].map((ri,i) => {
@@ -1365,7 +1451,7 @@ export default function App() {
                     );
                   })}
                 </div>
-
+ 
                 {/* Frozen list */}
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                   {sortedArch.map((m, rank) => {
@@ -1389,7 +1475,7 @@ export default function App() {
               </div>
             );
           }
-
+ 
           // Archive index — list of past months
           return (
             <div>
@@ -1397,7 +1483,7 @@ export default function App() {
                 <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:28, fontWeight:900, color:"#f1f5f9", letterSpacing:2, lineHeight:1 }}>HISTORY</div>
                 <div style={{ fontSize:11, color:"#64748b", marginTop:4, letterSpacing:1 }}>{archiveKeys.length === 0 ? "No archived months yet" : `${archiveKeys.length} archived month${archiveKeys.length===1?"":"s"}`}</div>
               </div>
-
+ 
               {archiveKeys.length === 0 ? (
                 <div style={{ background:"#0f0f0f", border:"1px dashed #2a2a2a", borderRadius:14, padding:"40px 20px", textAlign:"center" }}>
                   <div style={{ fontSize:36, marginBottom:12 }}>📚</div>
@@ -1430,7 +1516,7 @@ export default function App() {
             </div>
           );
         })()}
-
+ 
         {/* ══ SETUP ══ */}
         {tab === "SETUP" && (
           <div>
@@ -1460,12 +1546,12 @@ export default function App() {
                     <button onClick={() => setAdminUnlocked(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid #2a2a2a", background:"#0f0f0f", color:"#64748b", fontFamily:"inherit", fontSize:10, fontWeight:700, letterSpacing:1, cursor:"pointer" }}>🔒 LOCK</button>
                   </div>
                 </div>
-
+ 
                 {/* Helper note */}
                 <div style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:11, color:"#64748b", letterSpacing:1, lineHeight:1.6 }}>
                   💡 Click <strong style={{ color:"#FFD700" }}>EDIT</strong> to change targets, reset, or remove a member. Daily metrics auto-multiply by {WORK_DAYS} working days for the monthly total.
                 </div>
-
+ 
                 {members.length === 0 && (
                   <div style={{ background:"#0f0f0f", border:"1px dashed #2a2a2a", borderRadius:12, padding:"32px 16px", textAlign:"center", marginBottom:14 }}>
                     <div style={{ fontSize:30, marginBottom:8 }}>👥</div>
@@ -1473,7 +1559,7 @@ export default function App() {
                     <div style={{ fontSize:11, color:"#475569" }}>Click + ADD MEMBER above to get started</div>
                   </div>
                 )}
-
+ 
                 <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                   {members.map(m => {
                     const monthDays = getMonthDays();
@@ -1514,19 +1600,19 @@ export default function App() {
                     );
                   })}
                 </div>
-
+ 
                 {/* Edit modal */}
                 {editTargets && (
                   <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100, padding:16 }}>
                     <div style={{ background:"#0f0f0f", border:"1px solid #2a2a2a", borderRadius:16, padding:24, width:"100%", maxWidth:440, maxHeight:"90vh", overflowY:"auto" }}>
                       <div style={{ fontSize:16, fontWeight:800, letterSpacing:2, marginBottom:20, color:"#f1f5f9" }}>EDIT MEMBER</div>
-
+ 
                       {/* Name */}
                       <div style={{ marginBottom:20 }}>
                         <div style={{ fontSize:10, color:"#64748b", letterSpacing:2, marginBottom:6 }}>NAME</div>
                         <input value={editTargets.name} onChange={e => setEditTargets(p=>({...p,name:e.target.value}))} style={{ width:"100%", background:"#0a0a0f", border:"1px solid #2a2a2a", borderRadius:8, padding:"10px 12px", color:"#f1f5f9", fontFamily:"inherit", fontSize:14, outline:"none", boxSizing:"border-box" }} />
                       </div>
-
+ 
                       {/* Daily targets */}
                       <div style={{ fontSize:10, color:"#FFD700", letterSpacing:2, marginBottom:6 }}>DAILY TARGETS</div>
                       <div style={{ fontSize:10, color:"#334155", letterSpacing:1, marginBottom:10 }}>Monthly auto-calculates as daily × {WORK_DAYS} working days</div>
@@ -1546,7 +1632,7 @@ export default function App() {
                           );
                         })}
                       </div>
-
+ 
                       {/* Monthly targets — results metrics */}
                       <div style={{ fontSize:10, color:"#B8860B", letterSpacing:2, marginBottom:6 }}>MONTHLY TARGETS</div>
                       <div style={{ fontSize:10, color:"#334155", letterSpacing:1, marginBottom:10 }}>Set directly: Recruits, Points, Event Reg, Licenses</div>
@@ -1562,7 +1648,7 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-
+ 
                       {/* Danger zone */}
                       <div style={{ marginBottom:16, paddingTop:16, borderTop:"1px solid #1c1c1c" }}>
                         <div style={{ fontSize:10, color:"#f87171", letterSpacing:2, marginBottom:8 }}>DANGER ZONE</div>
@@ -1571,7 +1657,7 @@ export default function App() {
                           <button onClick={() => { removeMember(editTargets.id); setEditTargets(null); }} style={{ flex:1, padding:"10px", borderRadius:8, border:"1px solid #f8717144", background:"#f8717111", color:"#f87171", fontFamily:"inherit", fontSize:10, fontWeight:700, letterSpacing:1, cursor:"pointer" }}>🗑 REMOVE</button>
                         </div>
                       </div>
-
+ 
                       <div style={{ display:"flex", gap:10 }}>
                         <button onClick={() => setEditTargets(null)} style={{ flex:1, padding:"12px", borderRadius:10, border:"1px solid #2a2a2a", background:"transparent", color:"#64748b", fontFamily:"inherit", fontSize:11, fontWeight:700, letterSpacing:2, cursor:"pointer" }}>CANCEL</button>
                         <button onClick={saveTargets} style={{ flex:2, padding:"12px", borderRadius:10, border:"none", background:"linear-gradient(135deg,#FFD700,#B8860B)", color:"#0a0a0f", fontFamily:"inherit", fontSize:11, fontWeight:900, letterSpacing:2, cursor:"pointer" }}>SAVE TARGETS</button>
@@ -1584,22 +1670,22 @@ export default function App() {
           </div>
         )}
       </div>
-
+ 
       {/* ── Modal (alert / confirm / prompt) ── */}
       {modal && (
         <div onClick={() => modal.type === "alert" ? closeModal() : null} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background:"#0f0f0f", border:`1px solid ${modal.danger ? "#f8717144" : "#2a2a2a"}`, borderRadius:16, padding:24, width:"100%", maxWidth:380, boxShadow: modal.danger ? "0 8px 40px rgba(248,113,113,0.2)" : "0 8px 40px rgba(255,215,0,0.15)" }}>
-
+ 
             {/* Title */}
             <div style={{ fontSize:16, fontWeight:900, letterSpacing:1.5, color: modal.danger ? "#f87171" : "#f1f5f9", marginBottom:10, textTransform:"uppercase" }}>
               {modal.danger && "⚠ "}{modal.title}
             </div>
-
+ 
             {/* Message */}
             <div style={{ fontSize:13, color:"#94a3b8", lineHeight:1.6, marginBottom: modal.type === "prompt" ? 14 : 22, whiteSpace:"pre-wrap" }}>
               {modal.message}
             </div>
-
+ 
             {/* Prompt input */}
             {modal.type === "prompt" && (
               <input
@@ -1611,7 +1697,7 @@ export default function App() {
                 style={{ width:"100%", background:"#0a0a0a", border:"1px solid #2a2a2a", borderRadius:8, padding:"12px 14px", color:"#f1f5f9", fontFamily:"inherit", fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:22 }}
               />
             )}
-
+ 
             {/* Buttons */}
             <div style={{ display:"flex", gap:10 }}>
               {modal.type === "alert" && (
@@ -1633,7 +1719,7 @@ export default function App() {
           </div>
         </div>
       )}
-
+ 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;800;900&display=swap');
         * { box-sizing: border-box; }
