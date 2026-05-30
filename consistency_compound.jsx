@@ -232,6 +232,20 @@ function isDateLocked(dateKey) {
   return Date.now() > streakDeadlineMs(dateKey);
 }
  
+// Has this day OPENED for submission yet? A day only opens at 3pm EST ON that day,
+// so reps can't log a day they haven't finished. Before 3pm EST on D, D is not yet open.
+// (The day then stays open until isDateLocked() turns true at 3pm EST the next day.)
+function isDateOpen(dateKey) {
+  return Date.now() >= easternCutoffMs(dateKey);
+}
+ 
+// The single day that is currently "live" — open for submission right now.
+// Before 3pm ET this is yesterday; at/after 3pm ET it flips to today.
+// Matches streakReferenceKey() exactly, exposed under a name the UI reads naturally.
+function currentOpenDayKey() {
+  return streakReferenceKey();
+}
+ 
 function dateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
@@ -585,6 +599,17 @@ export default function App() {
       return;
     }
  
+    // Block submission for days that haven't opened yet. A day only opens at 3pm EST on
+    // that day, so reps can't log a shift they haven't finished. (Editing an existing
+    // submission is still allowed, though that shouldn't normally be reachable here.)
+    if (!isExistingSubmission && !isDateOpen(submissionDate)) {
+      showAlert(
+        "Not open yet",
+        `${formatDateKey(submissionDate)} doesn't open for submission until 3pm EST that day. Log it once your day is done — you can submit anytime up until 3pm EST the following day.`
+      );
+      return;
+    }
+ 
     // Validate: at least one number entered OR at least one habit ticked
     const hasNumbers = METRICS.some(({ key }) => {
       const v = logData[key];
@@ -607,11 +632,12 @@ export default function App() {
       }
     }
  
-    // Warn only when submitting for TODAY and breaking a habit streak of 3+
+    // Warn when submitting for the currently-open day and breaking a habit streak of 3+.
+    // (The open day is "today" after 3pm ET, or "yesterday" during the morning grace window.)
     const currentStreak = members[ciIdx].streak;
     const allHabitsTicked = HABITS.every(h => logData[h]);
-    const isToday = submissionDate === todayKey();
-    if (isToday && currentStreak >= 3 && !allHabitsTicked) {
+    const isOpenDay = submissionDate === currentOpenDayKey();
+    if (isOpenDay && currentStreak >= 3 && !allHabitsTicked) {
       showConfirm(
         `Break your ${currentStreak} day habit streak?`,
         `Missing any habit will reset your habit streak to 0. Your posting streak is unaffected. Submit anyway?`,
@@ -674,7 +700,10 @@ export default function App() {
         // Recompute streaks from full history (handles backdated submissions correctly)
         const newPostStreak  = computePostStreak(newSubs);
         const newHabitStreak = computeHabitStreak(newSubs);
-        const newDaysPosted  = Object.keys(newSubs).length;
+        // daysPosted reflects the CURRENT month only (submissions history is kept across
+        // resets for streaks, so counting all keys would over-count after a rollover).
+        const curMonth = monthKey();
+        const newDaysPosted  = Object.keys(newSubs).filter(dk => dk.startsWith(curMonth + "-")).length;
  
         return {
           ...m,
@@ -764,8 +793,20 @@ export default function App() {
           ...prev,
           [activeMonth]: { members: snapshot, archivedAt: Date.now() },
         }));
-        // Reset live state
-        setMembers(prev => prev.map(m => ({ ...m, actuals:EMPTY_ACTUALS(), habits:{business_plan:0,preplan:0,read_learn:0,workout:0}, streak:0, postStreak:0, daysPosted:0, submissions:{} })));
+        // Reset live state.
+        // Zero out the month's running totals (actuals / habit-day counts) and daysPosted,
+        // but PRESERVE the submissions history so post & habit streaks carry across the
+        // month boundary. Streaks are then recomputed from that preserved history, so a
+        // continuous chain spanning the reset stays intact.
+        setMembers(prev => prev.map(m => ({
+          ...m,
+          actuals: EMPTY_ACTUALS(),
+          habits: { business_plan:0, preplan:0, read_learn:0, workout:0 },
+          daysPosted: 0,
+          // submissions intentionally kept
+          postStreak: computePostStreak(m.submissions || {}),
+          streak:     computeHabitStreak(m.submissions || {}),
+        })));
         // Roll the active month forward to the current real-world month
         setActiveMonth(monthKey());
         closeModal();
@@ -1142,14 +1183,16 @@ export default function App() {
                 <div style={{ fontSize:11, color:"#64748b", letterSpacing:3, marginBottom:16, textAlign:"center" }}>WHO ARE YOU?</div>
                 <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
                   {members.map((m,i) => {
-                    const submittedToday = !!m.submissions?.[todayKey()];
+                    // The day that's live for logging right now (yesterday before 3pm ET, today after).
+                    const openDay = currentOpenDayKey();
+                    const submittedOpenDay = !!m.submissions?.[openDay];
                     return (
                       <button key={m.id} onClick={() => {
                         setCiIdx(i);
-                        setSubmissionDate(todayKey());
-                        // Pre-fill if today already submitted
-                        if (submittedToday) {
-                          const sub = m.submissions[todayKey()];
+                        setSubmissionDate(openDay);
+                        // Pre-fill if the open day already has a submission
+                        if (submittedOpenDay) {
+                          const sub = m.submissions[openDay];
                           const ld = EMPTY_LOG();
                           METRICS.forEach(({key}) => { const v = sub.actuals[key]; if (v) ld[key] = String(v); });
                           HABITS.forEach(h => { ld[h] = !!sub.habits[h]; });
@@ -1158,12 +1201,12 @@ export default function App() {
                           setLogData(EMPTY_LOG());
                         }
                         setCiScreen("FORM");
-                      }} style={{ display:"flex", alignItems:"center", gap:14, background:"#0f0f0f", border:`1px solid ${submittedToday ? GOLD+"44" : "#1c1c1c"}`, borderRadius:14, padding:"16px 20px", cursor:"pointer", transition:"all 0.2s", textAlign:"left", width:"100%" }}>
-                        <div style={{ width:44, height:44, borderRadius:"50%", background:"#0a0a0a", border:`1px solid ${submittedToday ? GOLD+"66" : GOLD+"33"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:900, color: submittedToday ? GOLD : "#94a3b8", flexShrink:0 }}>{m.name.charAt(0)}</div>
+                      }} style={{ display:"flex", alignItems:"center", gap:14, background:"#0f0f0f", border:`1px solid ${submittedOpenDay ? GOLD+"44" : "#1c1c1c"}`, borderRadius:14, padding:"16px 20px", cursor:"pointer", transition:"all 0.2s", textAlign:"left", width:"100%" }}>
+                        <div style={{ width:44, height:44, borderRadius:"50%", background:"#0a0a0a", border:`1px solid ${submittedOpenDay ? GOLD+"66" : GOLD+"33"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:900, color: submittedOpenDay ? GOLD : "#94a3b8", flexShrink:0 }}>{m.name.charAt(0)}</div>
                         <div style={{ flex:1 }}>
                           <div style={{ fontSize:16, fontWeight:800, letterSpacing:1, color:"#f1f5f9", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
                             {m.name}
-                            {submittedToday && <span style={{ fontSize:9, background:`${GOLD}1A`, color:GOLD, padding:"2px 7px", borderRadius:20, border:`1px solid ${GOLD}44`, letterSpacing:1 }}>✓ DONE TODAY</span>}
+                            {submittedOpenDay && <span style={{ fontSize:9, background:`${GOLD}1A`, color:GOLD, padding:"2px 7px", borderRadius:20, border:`1px solid ${GOLD}44`, letterSpacing:1 }}>✓ DONE TODAY</span>}
                           </div>
                           <div style={{ fontSize:10, color:"#64748b", letterSpacing:1, marginTop:3, display:"flex", flexWrap:"wrap", gap:8 }}>
                             <span>📅 {m.postStreak||0} day post streak</span>
@@ -1172,7 +1215,7 @@ export default function App() {
                             <span>{m.daysPosted}/month</span>
                           </div>
                         </div>
-                        <div style={{ color: submittedToday ? GOLD : "#475569", fontSize: submittedToday ? 12 : 22, fontWeight: submittedToday ? 700 : 400, letterSpacing: submittedToday ? 1 : 0 }}>{submittedToday ? "EDIT" : "›"}</div>
+                        <div style={{ color: submittedOpenDay ? GOLD : "#475569", fontSize: submittedOpenDay ? 12 : 22, fontWeight: submittedOpenDay ? 700 : 400, letterSpacing: submittedOpenDay ? 1 : 0 }}>{submittedOpenDay ? "EDIT" : "›"}</div>
                       </button>
                     );
                   })}
@@ -1200,7 +1243,7 @@ export default function App() {
                         {m.streak>0 && <span style={{ color:GOLD }}>🔥 {m.streak} habit streak</span>}
                       </div>
                     </div>
-                    <button onClick={() => { setCiScreen("SELECT"); setLogData(EMPTY_LOG()); setSubmissionDate(todayKey()); }} style={{ background:"transparent", border:"none", color:"#64748b", fontSize:12, letterSpacing:1, cursor:"pointer", fontFamily:"inherit" }}>CHANGE</button>
+                    <button onClick={() => { setCiScreen("SELECT"); setLogData(EMPTY_LOG()); setSubmissionDate(currentOpenDayKey()); }} style={{ background:"transparent", border:"none", color:"#64748b", fontSize:12, letterSpacing:1, cursor:"pointer", fontFamily:"inherit" }}>CHANGE</button>
                   </div>
  
                   {/* Date picker — calendar grid for the month */}
@@ -1216,9 +1259,12 @@ export default function App() {
                         const submitted  = !!m.submissions?.[dk];
                         const isSelected = dk === submissionDate;
                         const isFuture   = dk > todayKey();
+                        // A day that hasn't opened yet (before 3pm EST on that day) is not
+                        // selectable. Today before the 3pm cutoff falls into this bucket.
+                        const notOpenYet = !submitted && !isDateOpen(dk);
                         // Lock past days where deadline has passed AND nothing was submitted
                         const isLocked   = !isFuture && !submitted && isDateLocked(dk);
-                        const isDisabled = isFuture || isLocked;
+                        const isDisabled = isFuture || isLocked || notOpenYet;
                         const dayNum = parseInt(dk.split("-")[2], 10);
                         return (
                           <button
@@ -1243,15 +1289,16 @@ export default function App() {
                               cursor: isDisabled ? "not-allowed" : "pointer",
                               border: isSelected ? `2px solid ${GOLD}` : `1px solid ${submitted ? GOLD+"44" : isLocked ? "#3a1a1a" : "#1c1c1c"}`,
                               background: isSelected ? `${GOLD}33` : submitted ? `${GOLD}11` : isLocked ? "#1a0a0a" : "#0a0a0a",
-                              color: isFuture ? "#334155" : isLocked ? "#5a3a3a" : submitted ? GOLD : isSelected ? GOLD : "#94a3b8",
-                              opacity: isFuture ? 0.4 : isLocked ? 0.7 : 1,
+                              color: isFuture || notOpenYet ? "#334155" : isLocked ? "#5a3a3a" : submitted ? GOLD : isSelected ? GOLD : "#94a3b8",
+                              opacity: isFuture ? 0.4 : notOpenYet ? 0.4 : isLocked ? 0.7 : 1,
                               position:"relative",
                               transition:"all 0.15s",
                             }}
-                            title={isLocked ? `${formatDateKey(dk)}. Locked: deadline passed` : isFuture ? formatDateKey(dk) : formatDateKey(dk)}
+                            title={isLocked ? `${formatDateKey(dk)}. Locked: deadline passed` : notOpenYet ? `${formatDateKey(dk)}. Opens 3pm EST that day` : formatDateKey(dk)}
                           >
                             {dayNum}
                             {isLocked && <span style={{ position:"absolute", top:1, right:2, fontSize:7, lineHeight:1 }}>🔒</span>}
+                            {notOpenYet && !isFuture && <span style={{ position:"absolute", top:1, right:2, fontSize:7, lineHeight:1 }}>⏳</span>}
                           </button>
                         );
                       })}
@@ -1260,6 +1307,7 @@ export default function App() {
                       <span><span style={{ display:"inline-block", width:8, height:8, borderRadius:2, background:GOLD, marginRight:5, verticalAlign:"middle" }} />Posted</span>
                       <span><span style={{ display:"inline-block", width:8, height:8, borderRadius:2, background:"transparent", border:`2px solid ${GOLD}`, marginRight:5, verticalAlign:"middle" }} />Selected</span>
                       <span><span style={{ display:"inline-block", width:8, height:8, borderRadius:2, background:"#1c1c1c", marginRight:5, verticalAlign:"middle" }} />Available</span>
+                      <span>⏳ Opens 3pm EST</span>
                       <span>🔒 Locked</span>
                     </div>
                   </div>
