@@ -466,6 +466,7 @@ export default function App() {
   const [archives, setArchives]           = useState({});
   const [activeMonth, setActiveMonth]     = useState(monthKey());
   const [viewingArchive, setViewingArchive] = useState(null); // archive month key when viewing history
+  const [expandedArchiveId, setExpandedArchiveId] = useState(null); // expanded member in archive detail view
  
   // Check-in
   const [ciScreen, setCiScreen]           = useState("SELECT");
@@ -978,10 +979,11 @@ export default function App() {
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:14, fontWeight:800, letterSpacing:1, color:"#f1f5f9", marginBottom:4 }}>
                           {m.name.toUpperCase()}
-                          {(m.postStreak>1 || m.streak>1) && (
+                          {(m.postStreak>1 || m.streak>1 || m.daysPosted>0) && (
                             <span style={{ marginLeft:8, display:"inline-flex", gap:6, flexWrap:"wrap" }}>
                               {m.postStreak>1 && <span style={{ fontSize:10, background:"#1c1c1c", color:"#94a3b8", padding:"2px 8px", borderRadius:20, border:"1px solid #2a2a2a", letterSpacing:1 }}>📅 {m.postStreak}</span>}
                               {m.streak>1 && <span style={{ fontSize:10, background:`${GOLD}1A`, color:GOLD, padding:"2px 8px", borderRadius:20, border:`1px solid ${GOLD}44`, letterSpacing:1 }}>🔥 {m.streak}</span>}
+                              {m.daysPosted>0 && <span style={{ fontSize:10, background:"#1c1c1c", color:"#64748b", padding:"2px 8px", borderRadius:20, border:"1px solid #2a2a2a", letterSpacing:1 }}>📆 {m.daysPosted}d</span>}
                             </span>
                           )}
                         </div>
@@ -1474,7 +1476,7 @@ export default function App() {
             const sortedArch = arch.members; // already sorted at archive time
             return (
               <div>
-                <button onClick={() => setViewingArchive(null)} style={{ background:"transparent", border:"none", color:"#94a3b8", fontSize:11, letterSpacing:2, cursor:"pointer", fontFamily:"inherit", marginBottom:16, padding:"4px 0" }}>← BACK TO ARCHIVES</button>
+                <button onClick={() => { setViewingArchive(null); setExpandedArchiveId(null); }} style={{ background:"transparent", border:"none", color:"#94a3b8", fontSize:11, letterSpacing:2, cursor:"pointer", fontFamily:"inherit", marginBottom:16, padding:"4px 0" }}>← BACK TO ARCHIVES</button>
  
                 <div style={{ marginBottom:18 }}>
                   <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:36, fontWeight:900, color:GOLD, letterSpacing:2, lineHeight:1 }}>{formatMonthKey(viewingArchive)}</div>
@@ -1500,22 +1502,61 @@ export default function App() {
                   })}
                 </div>
  
-                {/* Frozen list */}
+                {/* Frozen list — tappable to expand full metric breakdown */}
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                   {sortedArch.map((m, rank) => {
                     const rankColors = [RANK_GOLD, RANK_SILVER, RANK_BRONZE];
                     const rc = rank < 3 ? rankColors[rank] : null;
+                    const isEx = expandedArchiveId === m.id;
                     return (
-                      <div key={m.id} style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:12 }}>
-                        <div style={{ width:24, height:24, borderRadius:"50%", background: rc ? `linear-gradient(135deg,${rc},${rc}88)` : "#1c1c1c", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:900, color: rc ? "#0a0a0f" : "#64748b", flexShrink:0 }}>{rank+1}</div>
-                        <div style={{ flex:1, fontSize:13, fontWeight:700, color:"#f1f5f9", letterSpacing:1 }}>{m.name.toUpperCase()}</div>
-                        <div style={{ fontSize:10, color:"#64748b", display:"flex", gap:8 }}>
-                          <span>📅 {m.postStreak}</span>
-                          {m.streak>0 && <span style={{ color:GOLD }}>🔥 {m.streak}</span>}
-                          <span>·</span>
-                          <span>{m.daysPosted}d</span>
+                      <div key={m.id}>
+                        <div onClick={() => setExpandedArchiveId(isEx ? null : m.id)} style={{ background:"#0f0f0f", border:`1px solid ${isEx ? GOLD+"55" : "#1c1c1c"}`, borderRadius:isEx?"12px 12px 0 0":10, padding:"10px 14px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", transition:"border-color 0.2s" }}>
+                          <div style={{ width:24, height:24, borderRadius:"50%", background: rc ? `linear-gradient(135deg,${rc},${rc}88)` : "#1c1c1c", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:900, color: rc ? "#0a0a0f" : "#64748b", flexShrink:0 }}>{rank+1}</div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:13, fontWeight:700, color:"#f1f5f9", letterSpacing:1, marginBottom:3 }}>{m.name.toUpperCase()}</div>
+                            <div style={{ fontSize:10, color:"#64748b", display:"flex", gap:8, flexWrap:"wrap" }}>
+                              {m.postStreak>0 && <span>📅 {m.postStreak}</span>}
+                              {m.streak>0 && <span style={{ color:GOLD }}>🔥 {m.streak}</span>}
+                              {m.daysPosted>0 && <span>📆 {m.daysPosted}d posted</span>}
+                            </div>
+                          </div>
+                          <div style={{ fontSize:18, fontWeight:900, color: rc || GOLD, minWidth:50, textAlign:"right" }}>{m.score.toLocaleString()}</div>
                         </div>
-                        <div style={{ fontSize:18, fontWeight:900, color: rc || GOLD, minWidth:50, textAlign:"right" }}>{m.score.toLocaleString()}</div>
+                        {isEx && (
+                          <div style={{ background:"#0a0a0a", border:`1px solid ${GOLD}33`, borderTop:"none", borderRadius:"0 0 12px 12px", padding:16 }}>
+                            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:12 }}>
+                              {METRICS.map(({ key, label, icon }) => {
+                                const actual = m.actuals?.[key] || 0;
+                                const target = (() => {
+                                  const met = METRICS.find(x => x.key === key);
+                                  if (met?.monthlyOnly) return m.monthly?.[key] ?? DEFAULT_MONTHLY[key] ?? 0;
+                                  return Math.round((m.daily?.[key] ?? 0) * WORK_DAYS);
+                                })();
+                                const p = getPct(actual, target);
+                                const c = getColor(p);
+                                return (
+                                  <div key={key} style={{ background:"#0f0f0f", borderRadius:10, padding:"10px 12px", border:"1px solid #1c1c1c" }}>
+                                    <div style={{ fontSize:10, color:"#64748b", letterSpacing:2, marginBottom:4 }}>{icon} {label.toUpperCase()}</div>
+                                    <div style={{ fontSize:20, fontWeight:900, color:c }}>{actual.toLocaleString()}</div>
+                                    <div style={{ fontSize:10, color:"#64748b" }}>of {target.toLocaleString()}</div>
+                                    <div style={{ height:3, background:"#1c1c1c", borderRadius:3, marginTop:8, overflow:"hidden" }}><div style={{ height:"100%", width:`${Math.min(p,100)}%`, background:c, borderRadius:3 }} /></div>
+                                    <div style={{ fontSize:11, fontWeight:700, color:c, marginTop:4 }}>{p}%</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                              {HABITS.map(h => {
+                                const count = m.habits?.[h] || 0;
+                                return (
+                                  <div key={h} style={{ padding:"5px 12px", borderRadius:20, fontSize:10, fontWeight:700, letterSpacing:1, background: count>0 ? `${GOLD}1A` : "#1c1c1c", color: count>0 ? GOLD : "#475569", border:`1px solid ${count>0 ? GOLD+"44" : "#2a2a2a"}` }}>
+                                    {count>0?"✓":"·"} {HABIT_LABELS[h].toUpperCase()} ({count}d)
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1546,7 +1587,7 @@ export default function App() {
                     const second = arch.members[1];
                     const third  = arch.members[2];
                     return (
-                      <button key={key} onClick={() => setViewingArchive(key)} style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", textAlign:"left", fontFamily:"inherit" }}>
+                      <button key={key} onClick={() => { setViewingArchive(key); setExpandedArchiveId(null); }} style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"center", gap:12, cursor:"pointer", textAlign:"left", fontFamily:"inherit" }}>
                         <div style={{ flex:1 }}>
                           <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:18, fontWeight:800, color:"#f1f5f9", letterSpacing:1.5 }}>{formatMonthKey(key)}</div>
                           <div style={{ fontSize:11, color:"#94a3b8", marginTop:4, display:"flex", flexWrap:"wrap", gap:8 }}>
