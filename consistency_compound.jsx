@@ -809,7 +809,7 @@ export default function App() {
         // but PRESERVE the submissions history so post & habit streaks carry across the
         // month boundary. Streaks are then recomputed from that preserved history, so a
         // continuous chain spanning the reset stays intact.
-        setMembers(prev => prev.map(m => ({
+        const resetMembers = members.map(m => ({
           ...m,
           actuals: EMPTY_ACTUALS(),
           habits: { business_plan:0, preplan:0, read_learn:0, workout:0 },
@@ -817,7 +817,12 @@ export default function App() {
           // submissions intentionally kept
           postStreak: computePostStreak(m.submissions || {}),
           streak:     computeHabitStreak(m.submissions || {}),
-        })));
+        }));
+        setMembers(resetMembers);
+        // CRITICAL: persist the zeroed actuals to Supabase immediately.
+        // Without this, a page reload pulls the old month's actuals back from the DB
+        // and the new month leaderboard shows last month's numbers.
+        Promise.all(resetMembers.map(m => sbUpsert("members", String(m.id), m))).catch(() => {});
         // Roll the active month forward to the current real-world month
         setActiveMonth(monthKey());
         closeModal();
@@ -835,10 +840,9 @@ export default function App() {
       `Reset ${m.name}?`,
       "Their numbers, habits, streak, and days posted will all go back to zero. Targets and name will be kept.\n\nThis cannot be undone.",
       () => {
-        setMembers(prev => prev.map(x => x.id===id
-          ? { ...x, actuals:EMPTY_ACTUALS(), habits:{business_plan:0,preplan:0,read_learn:0,workout:0}, streak:0, postStreak:0, daysPosted:0, submissions:{} }
-          : x
-        ));
+        const resetData = { ...m, actuals:EMPTY_ACTUALS(), habits:{business_plan:0,preplan:0,read_learn:0,workout:0}, streak:0, postStreak:0, daysPosted:0, submissions:{} };
+        setMembers(prev => prev.map(x => x.id===id ? resetData : x));
+        sbUpsert("members", String(id), resetData).catch(() => {});
         closeModal();
         showFlash(`${m.name} reset!`);
       },
