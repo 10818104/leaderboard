@@ -163,6 +163,13 @@ function monthKey(d = new Date()) {
   const m = parts.find(p => p.type === "month").value;
   return `${y}-${m}`;
 }
+
+// The month immediately before a given month key (e.g. "2026-06" → "2026-05")
+function prevMonthKey(mk) {
+  const [y, m] = mk.split("-").map(Number);
+  const d = new Date(y, m-2, 1); // m-2 because JS months are 0-indexed
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
  
 // Pretty-format a month key for display (e.g. "2026-05" → "MAY 2026")
 function formatMonthKey(key) {
@@ -264,15 +271,15 @@ function formatDateKey(key) {
   return new Date(y, m-1, d).toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric" });
 }
  
-// Generate calendar grid for current month
-function getMonthDays() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const lastDay = new Date(year, month+1, 0).getDate();
+// Generate calendar grid for a given month key (defaults to current ET month).
+// Accepts an optional "YYYY-MM" string so the check-in calendar can show a prior month.
+function getMonthDays(mk) {
+  const key = mk || monthKey();
+  const [y, m] = key.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
   const days = [];
   for (let i = 1; i <= lastDay; i++) {
-    days.push(dateKey(new Date(year, month, i)));
+    days.push(dateKey(new Date(y, m-1, i)));
   }
   return days;
 }
@@ -475,6 +482,7 @@ export default function App() {
   const [confirmed, setConfirmed]         = useState(null);
   const [saving, setSaving]               = useState(false);
   const [submissionDate, setSubmissionDate] = useState(todayKey()); // which day the rep is logging for
+  const [calendarMonth, setCalendarMonth]   = useState(monthKey()); // which month the calendar grid shows
  
   // Admin
   const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -745,7 +753,7 @@ export default function App() {
     setSaving(false);
   }
  
-  function handleCiReset() { setCiScreen("SELECT"); setCiIdx(null); setLogData(EMPTY_LOG()); setConfirmed(null); }
+  function handleCiReset() { setCiScreen("SELECT"); setCiIdx(null); setLogData(EMPTY_LOG()); setConfirmed(null); setCalendarMonth(monthKey()); }
  
   // ── Admin ──
   function openEdit(id) {
@@ -777,6 +785,7 @@ export default function App() {
       `This will save the current standings for ${formatMonthKey(activeMonth)} into the Archive tab so you can revisit them later. Then it zeros out actuals, habits, streaks, and days posted for every leader. Targets and names are preserved.\n\nThis cannot be undone.`,
       () => {
         // Snapshot current standings into archive
+        const archivingMonth = activeMonth;
         const snapshot = members.map(m => ({
           id: m.id,
           name: m.name,
@@ -786,7 +795,8 @@ export default function App() {
           habits: { ...m.habits },
           streak: m.streak || 0,
           postStreak: m.postStreak || 0,
-          daysPosted: m.daysPosted || 0,
+          // Compute daysPosted directly from submissions for this month so it's never stale
+          daysPosted: Object.keys(m.submissions || {}).filter(dk => dk.startsWith(archivingMonth + "-")).length,
           daily: { ...m.daily },
           monthly: { ...m.monthly },
         })).sort((a,b) => b.score - a.score);
@@ -1230,7 +1240,11 @@ export default function App() {
               const m = members[ciIdx];
               const isEditing = !!m.submissions?.[submissionDate];
               const isToday   = submissionDate === todayKey();
-              const monthDays = getMonthDays();
+              const curMk     = monthKey();
+              const prevMk    = prevMonthKey(curMk);
+              // Calendar shows calendarMonth; allow toggling back one month only
+              const showingPrevMonth = calendarMonth === prevMk;
+              const monthDays = getMonthDays(calendarMonth);
               return (
                 <div>
                   <div style={{ display:"flex", alignItems:"center", gap:12, background:`${m.color}11`, border:`1px solid ${m.color}33`, borderRadius:12, padding:"12px 16px", marginBottom:14 }}>
@@ -1245,17 +1259,34 @@ export default function App() {
                         {m.streak>0 && <span style={{ color:GOLD }}>🔥 {m.streak} habit streak</span>}
                       </div>
                     </div>
-                    <button onClick={() => { setCiScreen("SELECT"); setLogData(EMPTY_LOG()); setSubmissionDate(currentOpenDayKey()); }} style={{ background:"transparent", border:"none", color:"#64748b", fontSize:12, letterSpacing:1, cursor:"pointer", fontFamily:"inherit" }}>CHANGE</button>
+                    <button onClick={() => { setCiScreen("SELECT"); setLogData(EMPTY_LOG()); setSubmissionDate(currentOpenDayKey()); setCalendarMonth(monthKey()); }} style={{ background:"transparent", border:"none", color:"#64748b", fontSize:12, letterSpacing:1, cursor:"pointer", fontFamily:"inherit" }}>CHANGE</button>
                   </div>
  
                   {/* Date picker — calendar grid for the month */}
                   <div style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:12, padding:14, marginBottom:18 }}>
+                    {/* Month navigation row */}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-                      <div style={{ fontSize:11, color:"#64748b", letterSpacing:2 }}>SUBMITTING FOR</div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <div style={{ fontSize:11, color:"#64748b", letterSpacing:2 }}>SUBMITTING FOR</div>
+                        {/* ← prev month button — only show if previous month exists and has submittable days */}
+                        <button
+                          onClick={() => { setCalendarMonth(showingPrevMonth ? curMk : prevMk); }}
+                          style={{ background:"transparent", border:`1px solid ${showingPrevMonth ? GOLD+"55" : "#2a2a2a"}`, borderRadius:6, color: showingPrevMonth ? GOLD : "#64748b", fontSize:10, fontWeight:700, letterSpacing:1, padding:"2px 8px", cursor:"pointer", fontFamily:"inherit" }}
+                          title={showingPrevMonth ? `Switch to ${formatMonthKey(curMk)}` : `Edit ${formatMonthKey(prevMk)} numbers`}
+                        >
+                          {showingPrevMonth ? `◀ ${formatMonthKey(prevMk).split(" ")[0]}` : `← ${formatMonthKey(prevMk).split(" ")[0]}`}
+                        </button>
+                      </div>
                       <div style={{ fontSize:13, color: isToday ? GOLD : "#f1f5f9", fontWeight:700, letterSpacing:1 }}>
                         {isToday ? "TODAY" : ""} {formatDateKey(submissionDate)}
                       </div>
                     </div>
+                    {/* Month label when showing previous month */}
+                    {showingPrevMonth && (
+                      <div style={{ fontSize:10, color:GOLD, letterSpacing:2, marginBottom:8, textAlign:"center", fontWeight:700 }}>
+                        {formatMonthKey(prevMk)} — previous month
+                      </div>
+                    )}
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:4 }}>
                       {monthDays.map(dk => {
                         const submitted  = !!m.submissions?.[dk];
