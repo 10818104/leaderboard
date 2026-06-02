@@ -483,6 +483,7 @@ export default function App() {
   const [saving, setSaving]               = useState(false);
   const [submissionDate, setSubmissionDate] = useState(todayKey()); // which day the rep is logging for
   const [calendarMonth, setCalendarMonth]   = useState(monthKey()); // which month the calendar grid shows
+  const [adminBypassLock, setAdminBypassLock] = useState(false); // admin can unlock locked past days for backdating
  
   // Admin
   const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -753,7 +754,7 @@ export default function App() {
     setSaving(false);
   }
  
-  function handleCiReset() { setCiScreen("SELECT"); setCiIdx(null); setLogData(EMPTY_LOG()); setConfirmed(null); setCalendarMonth(monthKey()); }
+  function handleCiReset() { setCiScreen("SELECT"); setCiIdx(null); setLogData(EMPTY_LOG()); setConfirmed(null); setCalendarMonth(monthKey()); setAdminBypassLock(false); }
  
   // ── Admin ──
   function openEdit(id) {
@@ -780,53 +781,61 @@ export default function App() {
     }
   }
   function handleResetMonth() {
+    // Step 1: first confirm — standard warning
     showConfirm(
       "Archive this month and start fresh?",
-      `This will save the current standings for ${formatMonthKey(activeMonth)} into the Archive tab so you can revisit them later. Then it zeros out actuals, habits, streaks, and days posted for every leader. Targets and names are preserved.\n\nThis cannot be undone.`,
+      `This will save the current standings for ${formatMonthKey(activeMonth)} into the Archive tab. Actuals, habits, and days posted will be zeroed. Streak history is preserved.\n\nYou will be asked to confirm a second time before this executes.`,
       () => {
-        // Snapshot current standings into archive
-        const archivingMonth = activeMonth;
-        const snapshot = members.map(m => ({
-          id: m.id,
-          name: m.name,
-          color: m.color,
-          score: calcScore(m),
-          actuals: { ...m.actuals },
-          habits: { ...m.habits },
-          streak: m.streak || 0,
-          postStreak: m.postStreak || 0,
-          // Compute daysPosted directly from submissions for this month so it's never stale
-          daysPosted: Object.keys(m.submissions || {}).filter(dk => dk.startsWith(archivingMonth + "-")).length,
-          daily: { ...m.daily },
-          monthly: { ...m.monthly },
-        })).sort((a,b) => b.score - a.score);
-        setArchives(prev => ({
-          ...prev,
-          [activeMonth]: { members: snapshot, archivedAt: Date.now() },
-        }));
-        // Reset live state.
-        // Zero out the month's running totals (actuals / habit-day counts) and daysPosted,
-        // but PRESERVE the submissions history so post & habit streaks carry across the
-        // month boundary. Streaks are then recomputed from that preserved history, so a
-        // continuous chain spanning the reset stays intact.
-        const resetMembers = members.map(m => ({
-          ...m,
-          actuals: EMPTY_ACTUALS(),
-          habits: { business_plan:0, preplan:0, read_learn:0, workout:0 },
-          daysPosted: 0,
-          // submissions intentionally kept
-          postStreak: computePostStreak(m.submissions || {}),
-          streak:     computeHabitStreak(m.submissions || {}),
-        }));
-        setMembers(resetMembers);
-        // CRITICAL: persist the zeroed actuals to Supabase immediately.
-        // Without this, a page reload pulls the old month's actuals back from the DB
-        // and the new month leaderboard shows last month's numbers.
-        Promise.all(resetMembers.map(m => sbUpsert("members", String(m.id), m))).catch(() => {});
-        // Roll the active month forward to the current real-world month
-        setActiveMonth(monthKey());
         closeModal();
-        showFlash(`${formatMonthKey(activeMonth)} archived. Fresh start!`);
+        // Step 2: second confirm — type RESET to proceed
+        showPrompt(
+          "⚠ Final confirmation",
+          `Type RESET (all caps) to permanently archive ${formatMonthKey(activeMonth)} and zero out all actuals. This cannot be undone.`,
+          "Type RESET here",
+          (val) => {
+            if ((val || "").trim() !== "RESET") {
+              showAlert("Cancelled", "You didn't type RESET. Nothing was changed.");
+              return;
+            }
+            closeModal();
+            // Snapshot current standings into archive — includes full submissions map
+            // so streak history can be recovered if needed after a bad reset.
+            const archivingMonth = activeMonth;
+            const snapshot = members.map(m => ({
+              id: m.id,
+              name: m.name,
+              color: m.color,
+              score: calcScore(m),
+              actuals: { ...m.actuals },
+              habits: { ...m.habits },
+              streak: m.streak || 0,
+              postStreak: m.postStreak || 0,
+              daysPosted: Object.keys(m.submissions || {}).filter(dk => dk.startsWith(archivingMonth + "-")).length,
+              daily: { ...m.daily },
+              monthly: { ...m.monthly },
+              // Full submissions map preserved — enables streak recovery and audit
+              submissions: { ...(m.submissions || {}) },
+            })).sort((a,b) => b.score - a.score);
+            setArchives(prev => ({
+              ...prev,
+              [activeMonth]: { members: snapshot, archivedAt: Date.now() },
+            }));
+            // Reset live state — preserve submissions for streak continuity
+            const resetMembers = members.map(m => ({
+              ...m,
+              actuals: EMPTY_ACTUALS(),
+              habits: { business_plan:0, preplan:0, read_learn:0, workout:0 },
+              daysPosted: 0,
+              postStreak: computePostStreak(m.submissions || {}),
+              streak:     computeHabitStreak(m.submissions || {}),
+            }));
+            setMembers(resetMembers);
+            // Persist immediately to Supabase so reloads don't restore old actuals
+            Promise.all(resetMembers.map(m => sbUpsert("members", String(m.id), m))).catch(() => {});
+            setActiveMonth(monthKey());
+            showFlash(`${formatMonthKey(archivingMonth)} archived. Fresh start!`);
+          }
+        );
       },
       true
     );
@@ -850,7 +859,31 @@ export default function App() {
     );
   }
  
-  // Add a new member to the team with sensible defaults
+  // Delete an archive entry — admin only
+  function deleteArchive(mk) {
+    showConfirm(
+      `Delete ${formatMonthKey(mk)} archive?`,
+      `This will permanently remove the ${formatMonthKey(mk)} archive. The live leaderboard is unaffected.\n\nThis cannot be undone.`,
+      async () => {
+        setArchives(prev => {
+          const next = { ...prev };
+          delete next[mk];
+          return next;
+        });
+        // Remove from Supabase archives table
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/archives?month_key=eq.${encodeURIComponent(mk)}`, {
+            method: "DELETE",
+            headers: sbHeaders,
+          });
+        } catch(e) { console.warn("deleteArchive failed", e); }
+        if (viewingArchive === mk) { setViewingArchive(null); setExpandedArchiveId(null); }
+        closeModal();
+        showFlash(`${formatMonthKey(mk)} archive deleted`);
+      },
+      true
+    );
+  }
   function addMember() {
     showPrompt(
       "Add team member",
@@ -1263,7 +1296,7 @@ export default function App() {
                         {m.streak>0 && <span style={{ color:GOLD }}>🔥 {m.streak} habit streak</span>}
                       </div>
                     </div>
-                    <button onClick={() => { setCiScreen("SELECT"); setLogData(EMPTY_LOG()); setSubmissionDate(currentOpenDayKey()); setCalendarMonth(monthKey()); }} style={{ background:"transparent", border:"none", color:"#64748b", fontSize:12, letterSpacing:1, cursor:"pointer", fontFamily:"inherit" }}>CHANGE</button>
+                    <button onClick={() => { setCiScreen("SELECT"); setLogData(EMPTY_LOG()); setSubmissionDate(currentOpenDayKey()); setCalendarMonth(monthKey()); setAdminBypassLock(false); }} style={{ background:"transparent", border:"none", color:"#64748b", fontSize:12, letterSpacing:1, cursor:"pointer", fontFamily:"inherit" }}>CHANGE</button>
                   </div>
  
                   {/* Date picker — calendar grid for the month */}
@@ -1272,7 +1305,6 @@ export default function App() {
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                         <div style={{ fontSize:11, color:"#64748b", letterSpacing:2 }}>SUBMITTING FOR</div>
-                        {/* ← prev month button — only show if previous month exists and has submittable days */}
                         <button
                           onClick={() => { setCalendarMonth(showingPrevMonth ? curMk : prevMk); }}
                           style={{ background:"transparent", border:`1px solid ${showingPrevMonth ? GOLD+"55" : "#2a2a2a"}`, borderRadius:6, color: showingPrevMonth ? GOLD : "#64748b", fontSize:10, fontWeight:700, letterSpacing:1, padding:"2px 8px", cursor:"pointer", fontFamily:"inherit" }}
@@ -1280,11 +1312,26 @@ export default function App() {
                         >
                           {showingPrevMonth ? `◀ ${formatMonthKey(prevMk).split(" ")[0]}` : `← ${formatMonthKey(prevMk).split(" ")[0]}`}
                         </button>
+                        {/* Admin bypass — only visible when admin is unlocked */}
+                        {adminUnlocked && (
+                          <button
+                            onClick={() => setAdminBypassLock(b => !b)}
+                            style={{ background: adminBypassLock ? "#f8717122" : "transparent", border:`1px solid ${adminBypassLock ? "#f87171" : "#2a2a2a"}`, borderRadius:6, color: adminBypassLock ? "#f87171" : "#475569", fontSize:10, fontWeight:700, letterSpacing:1, padding:"2px 8px", cursor:"pointer", fontFamily:"inherit" }}
+                            title="Admin: unlock locked days for backdating"
+                          >
+                            {adminBypassLock ? "🔓 BYPASS ON" : "🔒 BYPASS"}
+                          </button>
+                        )}
                       </div>
                       <div style={{ fontSize:13, color: isToday ? GOLD : "#f1f5f9", fontWeight:700, letterSpacing:1 }}>
                         {isToday ? "TODAY" : ""} {formatDateKey(submissionDate)}
                       </div>
                     </div>
+                    {adminBypassLock && (
+                      <div style={{ background:"#f8717111", border:"1px solid #f8717144", borderRadius:8, padding:"8px 12px", marginBottom:10, fontSize:10, color:"#f87171", letterSpacing:1 }}>
+                        ⚠ Admin bypass active — locked days are editable. Use for streak recovery only.
+                      </div>
+                    )}
                     {/* Month label when showing previous month */}
                     {showingPrevMonth && (
                       <div style={{ fontSize:10, color:GOLD, letterSpacing:2, marginBottom:8, textAlign:"center", fontWeight:700 }}>
@@ -1296,11 +1343,9 @@ export default function App() {
                         const submitted  = !!m.submissions?.[dk];
                         const isSelected = dk === submissionDate;
                         const isFuture   = dk > todayKey();
-                        // A day that hasn't opened yet (before 3pm EST on that day) is not
-                        // selectable. Today before the 3pm cutoff falls into this bucket.
                         const notOpenYet = !submitted && !isDateOpen(dk);
-                        // Lock past days where deadline has passed AND nothing was submitted
-                        const isLocked   = !isFuture && !submitted && isDateLocked(dk);
+                        // Admin bypass overrides the lock so Connor can backdate for streak recovery
+                        const isLocked   = !isFuture && !submitted && isDateLocked(dk) && !adminBypassLock;
                         const isDisabled = isFuture || isLocked || notOpenYet;
                         const dayNum = parseInt(dk.split("-")[2], 10);
                         return (
@@ -1324,17 +1369,17 @@ export default function App() {
                               aspectRatio:"1", borderRadius:6, fontFamily:"inherit",
                               fontSize:11, fontWeight:700,
                               cursor: isDisabled ? "not-allowed" : "pointer",
-                              border: isSelected ? `2px solid ${GOLD}` : `1px solid ${submitted ? GOLD+"44" : isLocked ? "#3a1a1a" : "#1c1c1c"}`,
-                              background: isSelected ? `${GOLD}33` : submitted ? `${GOLD}11` : isLocked ? "#1a0a0a" : "#0a0a0a",
-                              color: isFuture || notOpenYet ? "#334155" : isLocked ? "#5a3a3a" : submitted ? GOLD : isSelected ? GOLD : "#94a3b8",
-                              opacity: isFuture ? 0.4 : notOpenYet ? 0.4 : isLocked ? 0.7 : 1,
+                              border: isSelected ? `2px solid ${GOLD}` : `1px solid ${submitted ? GOLD+"44" : (isLocked && !adminBypassLock) ? "#3a1a1a" : "#1c1c1c"}`,
+                              background: isSelected ? `${GOLD}33` : submitted ? `${GOLD}11` : (isLocked && !adminBypassLock) ? "#1a0a0a" : "#0a0a0a",
+                              color: isFuture || notOpenYet ? "#334155" : (isLocked && !adminBypassLock) ? "#5a3a3a" : submitted ? GOLD : isSelected ? GOLD : "#94a3b8",
+                              opacity: isFuture ? 0.4 : notOpenYet ? 0.4 : (isLocked && !adminBypassLock) ? 0.7 : 1,
                               position:"relative",
                               transition:"all 0.15s",
                             }}
-                            title={isLocked ? `${formatDateKey(dk)}. Locked: deadline passed` : notOpenYet ? `${formatDateKey(dk)}. Opens 3pm EST that day` : formatDateKey(dk)}
+                            title={(isLocked && !adminBypassLock) ? `${formatDateKey(dk)}. Locked: deadline passed` : notOpenYet ? `${formatDateKey(dk)}. Opens 3pm EST that day` : formatDateKey(dk)}
                           >
                             {dayNum}
-                            {isLocked && <span style={{ position:"absolute", top:1, right:2, fontSize:7, lineHeight:1 }}>🔒</span>}
+                            {(isLocked && !adminBypassLock) && <span style={{ position:"absolute", top:1, right:2, fontSize:7, lineHeight:1 }}>🔒</span>}
                             {notOpenYet && !isFuture && <span style={{ position:"absolute", top:1, right:2, fontSize:7, lineHeight:1 }}>⏳</span>}
                           </button>
                         );
@@ -1670,6 +1715,21 @@ export default function App() {
                     <button onClick={() => setAdminUnlocked(false)} style={{ padding:"7px 14px", borderRadius:8, border:"1px solid #2a2a2a", background:"#0f0f0f", color:"#64748b", fontFamily:"inherit", fontSize:10, fontWeight:700, letterSpacing:1, cursor:"pointer" }}>🔒 LOCK</button>
                   </div>
                 </div>
+
+                {/* Archive management — delete accidental snapshots */}
+                {Object.keys(archives).length > 0 && (
+                  <div style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:10, padding:"12px 14px", marginBottom:14 }}>
+                    <div style={{ fontSize:10, color:"#f87171", letterSpacing:2, marginBottom:10 }}>🗂 MANAGE ARCHIVES</div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                      {Object.keys(archives).sort().reverse().map(mk => (
+                        <div key={mk} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:"#0a0a0a", borderRadius:8, padding:"8px 12px" }}>
+                          <span style={{ fontSize:12, color:"#94a3b8", fontWeight:700, letterSpacing:1 }}>{formatMonthKey(mk)}</span>
+                          <button onClick={() => deleteArchive(mk)} style={{ padding:"4px 10px", borderRadius:6, border:"1px solid #f8717144", background:"#f8717111", color:"#f87171", fontFamily:"inherit", fontSize:10, fontWeight:700, letterSpacing:1, cursor:"pointer" }}>🗑 DELETE</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
  
                 {/* Helper note */}
                 <div style={{ background:"#0f0f0f", border:"1px solid #1c1c1c", borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:11, color:"#64748b", letterSpacing:1, lineHeight:1.6 }}>
